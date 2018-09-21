@@ -33,7 +33,7 @@ args = parser.parse_args()
 if __name__ == '__main__':
     with connect(user='postgres', password='coderslab', host='localhost', database='messhub_db') as con:
         with con.cursor(cursor_factory=RealDictCursor) as cur:
-            print(args)
+
             loaded_users = User.load_all_users(cur)
 
             if args.user and args.password:
@@ -100,7 +100,6 @@ if __name__ == '__main__':
                         print(f"""Konto użytkownika "{args.user}" założone.""")
 
                     elif args.newpass:
-                        print('zmiana hasła')
                         loaded_user.set_password(args.newpass)
                         loaded_user.save_to_db(cur)
                         print(f"""Hasło użytkownika "{args.user}" zmienione.""")
