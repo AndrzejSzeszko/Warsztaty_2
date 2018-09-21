@@ -1,0 +1,116 @@
+#!/usr/bin/python3.7
+from psycopg2 import connect
+from psycopg2.extras import RealDictCursor
+import argparse
+from clcrypto import check_password
+from models import User
+from models import Message
+# messhub -u {user} -p {password} -t {email} -s {message}
+# messhub -u {user} -p {password} -l
+# messhub -u {user} -p {password} -d
+# messhub -u {user} -p {password} -e {email}
+# messhub -u {user} -p {password} -n {new-pass}
+# messhub -l
+
+parser = argparse.ArgumentParser(description='Show messages from other users and manage your account.')
+parser.add_argument('-u', '--user', type=str, metavar='', help='User\'s login. If multi-word login is passed it should be surrounded'
+                                                               'by quotation marks (\'\' or ""). Must always go alongside -p command.')
+parser.add_argument('-p', '--password', type=str, metavar='', help='User\'s password. Must always go alongside -u command.')
+parser.add_argument('-s', '--send', type=str, metavar='', help='Sends the message that is placed after this parameter.'
+                                                               'If multi-word message is passed it should be surrounded'
+                                                               'by quotation marks (\'\' or ""). Must always go alongside -t command.')
+
+group = parser.add_mutually_exclusive_group()
+group.add_argument('-l', '--list', action='store_true', help='Lists all users or all current users\'s messages (if passed alongside -u and -p).')
+group.add_argument('-d', '--delete', action='store_true', help='Deletes user account.')
+group.add_argument('-t', '--to', type=str, metavar='', help='Email of the user that the message is supposed to be send to. Must always go alongside -s command.')
+group.add_argument('-e', '--email', type=str, metavar='', help='User\'s email')
+group.add_argument('-n', '--newpass', type=str, metavar='', help='User\'s new password.')
+
+args = parser.parse_args()
+
+
+if __name__ == '__main__':
+    with connect(user='postgres', password='coderslab', host='localhost', database='messhub_db') as con:
+        with con.cursor(cursor_factory=RealDictCursor) as cur:
+            print(args)
+            loaded_users = User.load_all_users(cur)
+
+            if args.user and args.password:
+
+                try:
+                    for user in loaded_users:
+                        if user.username == args.user:
+                            user_id = user.id
+
+                    loaded_user = User.load_user_by_id(cur, user_id)
+
+                    assert check_password(args.password, loaded_user.hashed_password), \
+                        '\nUsername or password is not valid. Try again.\n'
+
+                except NameError:
+                    print(f'\nThere is no user named {args.user}!\n')  # todo override NameError message with custom message
+                    # raise
+
+                if args.send:
+                    if args.to:
+
+                        try:
+                            for user in loaded_users:
+                                if user.email == args.to:
+                                    to_id = user.id
+
+                            message = Message()
+                            message.from_id = user_id
+                            message.to_id = to_id
+                            message.text = args.send
+
+                            message.save_to_db(cur)
+                            print('Wiadomość wysłana.')
+                        except NameError:
+                            print(f'\nThere is no user with e-mail {args.to}!\n')
+                            # raise
+
+                    else:
+                        parser.print_help()
+                else:
+                    if args.list:
+                        user_messages = Message.load_messages_for_user(cur, loaded_user.id)
+
+                        for message in user_messages:
+
+                            for user in loaded_users:
+                                if user.id == message.from_id:
+                                    from_username = user.username
+                                    from_email = user.email
+
+                            print(f"""{message.id}) [from: {from_username} - {from_email}] at {message.creation_datetime}:
+                            "{message.text}" """)
+
+                    elif args.delete:
+                        loaded_user.delete_from_db(cur)
+                        print(f"""Użytkownik usunięty.""")
+
+                    elif args.email:
+                        new_user = User()
+                        new_user.username = args.user
+                        new_user.email = args.email
+                        new_user.set_password(args.password)
+                        new_user.save_to_db(cur)
+                        print(f"""Konto użytkownika "{args.user}" założone.""")
+
+                    elif args.newpass:
+                        print('zmiana hasła')
+                        loaded_user.set_password(args.newpass)
+                        loaded_user.save_to_db(cur)
+                        print(f"""Hasło użytkownika "{args.user}" zmienione.""")
+
+                    else:
+                        parser.print_help()
+            elif args.list and not args.delete and not args.email and not args.newpass and not args.to\
+                    and not args.password and not args.user and not args.send:
+                for user in loaded_users:
+                    print(f"""{user.id}) {user.username} [{user.email}]""")
+
+            else:
+                parser.print_help()
